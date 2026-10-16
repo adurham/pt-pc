@@ -614,7 +614,7 @@ void OptionsMenu::Update(Game& game, const MenuInput& raw_input, float dt) {
     if (switch_frame_ >= kSwitchOut && page_ != next_page_) {
         page_ = next_page_;
         if (page_ == Page::Original) {
-            Play("UI_sys_opt_setin_s");
+            Play("UI_sys_opt_setin");
         }
     }
     if (switch_frame_ >= kSwitchOut + kSwitchIn) {
