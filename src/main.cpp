@@ -175,6 +175,7 @@ struct Options {
     std::filesystem::path game_dir = "game/CUSA01127";
     bool game_dir_given = false;
     bool headless = false;
+    bool warm = false; ///< --warm: no window, the real user data, exit when the pipelines are made
     bool debug_panel = false;
     bool dev_ui = false;
     bool validation = false;
@@ -265,6 +266,7 @@ constexpr OptionSpec kOptionSpecs[] = {
     {"--dev-ui", 0, "developer UI (Tab toggles the debug panel)"},
     {"--validation", 0, "Vulkan validation layers"},
     {"--headless", 0, "no window: run the given number of frames and exit (tests)"},
+    {"--warm", 0, "no window: warm the pipeline caches for the next launch, then exit"},
     {"--frames", 1, "<n> frames to run headless"},
     {"--screenshot", 1, "<file> write the last frame"},
     {"--shot-warmup", 1, "<n> frames before each shot"},
@@ -359,6 +361,10 @@ Options ParseOptions(int argc, char** argv) {
             options.dev_ui = true;
         } else if (arg == "--headless") {
             options.headless = true;
+        } else if (arg == "--warm") {
+            options.warm = true;
+            options.headless = true;
+            options.frames = std::max(options.frames, 60); // the warm-up itself is joined at exit
         } else if (arg == "--camera" && i + 4 < argc) {
             options.has_camera = true;
             options.camera = glm::vec4(std::stof(argv[i + 1]), std::stof(argv[i + 2]), std::stof(argv[i + 3]), std::stof(argv[i + 4]));
@@ -6855,6 +6861,10 @@ int RunGame(App& app, pt::Vfs& vfs) {
     app.scene.vfx_liquid_depth = nullptr;
     app.scene.vfx_filter = nullptr;
     pipeline_warmup.Join();
+    if (options.warm) {
+        pt::LogInfo("warm: done; {} pipelines made ahead in {:.2f} s — the next launch starts with them cached",
+                    pipeline_warmup.Pipelines(), pipeline_warmup.Seconds());
+    }
     vfx_pass.Shutdown();
     app.renderer.overlay = nullptr;
     app.renderer.overlay_top_pending = nullptr;
@@ -6886,6 +6896,11 @@ int main(int argc, char** argv) {
     pt::IoSetMainThread();
     App app;
     app.options = ParseOptions(argc, argv);
+    if (app.options.warm) {
+        // A warm run keeps the real user data (the pipeline cache it fills is the one the
+        // player's launches use) instead of the tools' working-folder data.
+        setenv("PT_HEADLESS_USER_DATA", "1", 1);
+    }
     if (!app.options.make_loop_previews.empty()) {
         SetUpLoopPreviewRun(app.options);
     }
@@ -7335,7 +7350,7 @@ int main(int argc, char** argv) {
     settings.hdr = app.settings.display.hdr;
     settings.hdr_paper_white = app.settings.display.hdr_paper_white;
     settings.hdr_peak = app.settings.display.hdr_peak;
-    if (!options.headless) {
+    if (!options.headless || options.warm) {
         settings.pipeline_cache_dir = UserDataDir() / "pipeline-cache";
     } else if (!options.settings_path.empty()) {
         settings.pipeline_cache_dir = std::filesystem::absolute(options.settings_path).parent_path() / "pipeline-cache";
