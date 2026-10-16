@@ -1,0 +1,12 @@
+# The switch back to the original options page plays the page's set-in again (the layout records
+# UI_sys_opt_setin, which plays UI_sys_opt_setin.uia and its material half UI_sys_opt_setin_s.uia
+# together). No option animation may be missing: the 1.0.5 build asked for "UI_sys_opt_setin_s", the
+# material file's name, so the lookup failed and the set-in never replayed.
+pattach 0 ps5
+sui menu pc
+swait 150
+sexpect page 1
+stap 0 circle
+swait 150
+sexpect page 0
+slog

@@ -4688,6 +4688,13 @@ int RunGame(App& app, pt::Vfs& vfs) {
     const int64_t presence_start = static_cast<int64_t>(std::time(nullptr));
     if (presence_on) pt::PresenceStart(discord_id);
     float boot_splash_seconds = 0.0f;
+    // a scripted run (--input-script: the walkthrough and capture modes) is timed on the frame clock, so
+    // the same script produces the same log on any machine; without it, wall-timed boot phases (the
+    // enhanced textures screen, the shader screen, the loading screen's release) leave a fast machine's
+    // frame budget unused and the same scenarios pass or fail by machine speed
+    const bool scripted_run = !options.input_script.empty();
+    uint64_t boot_clock_frame = 0;
+    const auto boot_now_ns = [&]() -> uint64_t { return scripted_run ? boot_clock_frame * 16'666'667ull : SDL_GetTicksNS(); };
     uint32_t boot_splash_texture = pt::TextureManager::kWhite;
     const bool shader_screen_wanted = ui_ready && app.window && options.input_script.empty() && app.renderer.Context().pipeline_cache_cold;
     const char* texture_screen_test = std::getenv("PT_TEST_TEXTURE_SCREEN");
@@ -4829,7 +4836,7 @@ int RunGame(App& app, pt::Vfs& vfs) {
     bool shader_screen = shader_screen_wanted;
     int texture_screen = texture_screen_wanted ? 1 : 0;
     bool texture_asking = false;
-    uint64_t texture_screen_start = SDL_GetTicksNS();
+    uint64_t texture_screen_start = boot_now_ns();
     const uint32_t texture_test_maps = texture_screen_test ? static_cast<uint32_t>(std::strtoul(texture_screen_test, nullptr, 10)) : 0u;
     uint64_t texture_test_frame = 0;
     const auto texture_job_status = [&](uint64_t now_frame) {
@@ -5143,17 +5150,17 @@ int RunGame(App& app, pt::Vfs& vfs) {
     int activate_tries = 0;
     uint64_t activate_next_ns = 0;
     bool boot_wait = true;
-    uint64_t boot_wait_start = SDL_GetTicksNS();
+    uint64_t boot_wait_start = boot_now_ns();
     const uint64_t shader_screen_start = boot_wait_start;
     double boot_splash_gone = -1.0;
     bool enhanced_under_way = false;
     uint64_t enhanced_notice_ms = 0;
     auto end_texture_screen = [&](const char* why) {
-        const double on_screen = static_cast<double>(SDL_GetTicksNS() - texture_screen_start) * 1e-9;
+        const double on_screen = static_cast<double>(boot_now_ns() - texture_screen_start) * 1e-9;
         texture_screen = 0;
         texture_asking = false;
         ui.SetTexturesScreen({}, 0.0f, false);
-        boot_wait_start = SDL_GetTicksNS();
+        boot_wait_start = boot_now_ns();
         if (boot_splash_texture != pt::TextureManager::kWhite) ui.ShowBootSplash(boot_splash_texture, boot_splash_seconds);
         pt::LogInfo("boot: enhanced textures screen over after {:.1f} s ({})", on_screen, why);
         if (std::string_view(why) == "prepared") enhanced_under_way = false;
@@ -5198,6 +5205,7 @@ int RunGame(App& app, pt::Vfs& vfs) {
         }
     }
     while (running) {
+        boot_clock_frame = frame;
         if (app.window) {
             const bool focus = (SDL_GetWindowFlags(app.window) & SDL_WINDOW_INPUT_FOCUS) != 0;
             const SDL_DisplayID id = SDL_GetDisplayForWindow(app.window);
@@ -5253,11 +5261,11 @@ int RunGame(App& app, pt::Vfs& vfs) {
             app.renderer.Context().pipeline_saver.Request();
         }
         if (shader_screen) {
-            const double on_screen = static_cast<double>(SDL_GetTicksNS() - shader_screen_start) * 1e-9;
+            const double on_screen = static_cast<double>(boot_now_ns() - shader_screen_start) * 1e-9;
             if (pipelines_warm || on_screen > 300.0) {
                 shader_screen = false;
                 ui.SetShaderScreen({});
-                boot_wait_start = SDL_GetTicksNS();
+                boot_wait_start = boot_now_ns();
                 texture_screen_start = boot_wait_start;
                 if (!texture_screen && boot_splash_texture != pt::TextureManager::kWhite) ui.ShowBootSplash(boot_splash_texture, boot_splash_seconds);
                 pt::LogInfo("boot: shader preparation screen shown for {:.1f} s{}", on_screen, pipelines_warm ? "" : " (pipelines still being made)");
@@ -5267,7 +5275,7 @@ int RunGame(App& app, pt::Vfs& vfs) {
             }
         }
         if (texture_screen && !shader_screen) {
-            const double waited_here = static_cast<double>(SDL_GetTicksNS() - texture_screen_start) * 1e-9;
+            const double waited_here = static_cast<double>(boot_now_ns() - texture_screen_start) * 1e-9;
             const pt::EnhancedTextureJob::Status job = texture_job_status(frame);
             const bool checking = job.state == pt::EnhancedTextureJob::State::Running && job.total == 0;
             const bool incomplete = job.state == pt::EnhancedTextureJob::State::Running && job.total > job.done;
@@ -5309,7 +5317,7 @@ int RunGame(App& app, pt::Vfs& vfs) {
             const bool checking_cache = app.texture_requested && texture_job_status.state == pt::EnhancedTextureJob::State::Running &&
                                         texture_job_status.done >= texture_job_status.total;
             const bool preparing = checking_cache || app.textures.EnhancedPending();
-            const double waited = static_cast<double>(SDL_GetTicksNS() - boot_wait_start) * 1e-9;
+            const double waited = static_cast<double>(boot_now_ns() - boot_wait_start) * 1e-9;
             const bool splash = ui_ready && ui.BootSplashShown() && waited < 30.0;
             if (splash) boot_splash_gone = waited;
             const bool after_splash = boot_splash_gone >= 0.0 && waited < boot_splash_gone + 1.0;
@@ -6788,7 +6796,7 @@ int RunGame(App& app, pt::Vfs& vfs) {
             }
         }
         if (!boot_shots.empty() && app.window) {
-            const double seconds = static_cast<double>(SDL_GetTicksNS() - boot_wait_start) * 1e-9;
+            const double seconds = static_cast<double>(boot_now_ns() - boot_wait_start) * 1e-9;
             auto shoot = [&](const char* name, bool& taken) {
                 if (!taken && app.renderer.SaveScreenshot(boot_shots / name)) taken = true;
             };

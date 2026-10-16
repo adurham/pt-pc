@@ -33,6 +33,18 @@ F120_SAVE = ((0x6E69777470).to_bytes(8, "little") + (3).to_bytes(4, "little") + 
 # what the halls page counts after the retroactive unlock: the guaranteed keys' exhibits, the content that opens with the finish
 ARCHIVE_BACKFILL_COUNT = r"museum: 73 / 107 found \(68%\), bonus 0"
 
+# log lines no scenario may produce: a UI lookup by name that did not resolve is a bug in how the port asks
+# for its data (a wrong name, a missing asset) and the game always fails silently - the 1.0.5 build asked
+# for "UI_sys_opt_setin_s", a material file's name, and the option menu's set-in never replayed. A
+# scenario's "allow_warns" entry exempts patterns it provokes on purpose.
+NEVER_WARNS = [
+    r"ui: option menu model missing",
+    r"ui: option animation .* missing",
+    r"ui: font palette .* missing",
+    r"ui: .* missing, subtitle generator defaults used",
+    r"ui: texture .* missing",
+]
+
 SCENARIOS = {
     "full": {
         "start_floor": None,
@@ -898,6 +910,20 @@ SCENARIOS = {
         "expect": [
             r"expect ok .*: PC setting pc_gamepad_sensitivity = 2",
             r"expect ok .*: PC setting pc_mouse = 4",
+            r"input script: \d+ expectations, 0 failed",
+        ],
+    },
+    # the switch back to the original page replays the page's set-in (the layout records UI_sys_opt_setin);
+    # no option animation may be missing (1.0.5 asked for UI_sys_opt_setin_s, the material file's name)
+    "options_pc_back": {
+        "pad": True,
+        "start_floor": "f010",
+        "frames": 1500,
+        "route": ["start", "options_pc_back"],
+        "forbid": [("ui: option menu opened", "game: stopped", r"option animation .* missing")],
+        "expect": [
+            r"ui: option menu opened \((?:pause|first boot), PC settings\)",
+            r"ui: option menu page original",
             r"input script: \d+ expectations, 0 failed",
         ],
     },
@@ -1955,10 +1981,12 @@ SCENARIOS = {
             r"notice: ended pc_notice_enhanced_working after 7\.[5-9] s",
             r"notice: shown pc_gameplus_notice.2",
             r"notice: ended pc_gameplus_notice.2 after 7\.[5-9] s",
-            r"notice: shown pc_notice_enhanced_ready",
-            r"notice: ended pc_notice_enhanced_ready after 7\.[5-9] s",
+            # the walk starts while the made up generation is still finishing: on the frame clock its ready
+            # line lands after the floors (it landed before them only while the boot ran on the wall clock)
             r"floor: NextFloor f010 -> f005",
             r"floor: NextFloor f005 -> f020",
+            r"notice: shown pc_notice_enhanced_ready",
+            r"notice: ended pc_notice_enhanced_ready after 7\.[5-9] s",
         ],
         "forbid": [(r"notice: ended pc_notice_enhanced_ready", r"zzz never", r"notice: (queued|shown|cut)")],
     },
@@ -2224,6 +2252,10 @@ SCENARIOS = {
             r"stage: collision after the swap of next into current built on a worker",
             r"stage: _unload_ \(id 2, .*pt14_start\.fpk\) unloaded",
             r"stage: collision 9493 triangles, 370 material surfaces, 182293 line check triangles \(swap of next into current, worker",
+        ],
+        # the voice line comes from the recognizer's load thread, so where it lands among the stage lines
+        # follows the machine's thread timing, not the frame clock: check it for presence, without an order
+        "expect_any": [
             r"voice: whisper\.cpp CPU code ggml-cpu-",
         ],
         "forbid": [
@@ -2358,14 +2390,20 @@ def run(name, scenario, exe, game, demo_rate, keep, shots, pad=False, pt_args=()
         if livesplit:
             data = data.replace(b"{livesplit_port}", str(livesplit.port).encode())
         (work / file_name).write_bytes(data)
-    cmd = [str(exe), "--game", str(game), "--headless", *save, "--frames", str(scenario["frames"]), "--demo-rate",
+    # "windowed": run with a real window instead of --headless (the daily config's window path is otherwise
+    # never exercised); "window": its size (a small one by default, since a windowed run shows on the screen)
+    window = scenario.get("window", (960, 540) if scenario.get("windowed") else (1280, 720))
+    cmd = [str(exe), "--game", str(game), *save, "--frames", str(scenario["frames"]), "--demo-rate",
            str(scenario.get("demo_rate", demo_rate)),
-           "--input-script", str(route), "--width", "1280", "--height", "720", "--seed", str(scenario.get("seed", 1))]
+           "--input-script", str(route), "--width", str(window[0]), "--height", str(window[1]), "--seed", str(scenario.get("seed", 1))]
+    if not scenario.get("windowed"):
+        cmd.insert(3, "--headless")
     if scenario.get("start_floor"):
         cmd += ["--start-floor", scenario["start_floor"]]
     if pad:
         cmd += ["--virtual-pads", "--audio-offline"] + scenario.get("extra", [])
     cmd += scenario.get("args", [])
+    cmd += ["--log", str(work / "pt.log")]
     if vr:
         cmd += ["--vr"]
     cmd += list(pt_args)
@@ -2410,6 +2448,19 @@ def run(name, scenario, exe, game, demo_rate, keep, shots, pad=False, pt_args=()
         results.append((pattern, found))
         if found is not None:
             position = found + 1
+    # "expect_any": patterns each of which must appear somewhere in the log, with no order between them
+    # (events timed by frames and by the machine's clock interleave differently on different machines)
+    for pattern in scenario.get("expect_any", []):
+        regex = re.compile(pattern)
+        found = next((i for i, line in enumerate(log) if regex.search(line)), None)
+        results.append((pattern, found))
+    # no lookup by name may fail silently: a "missing" line is a bug in how the port asks for its data
+    for pattern in NEVER_WARNS:
+        if any(re.search(a, pattern) for a in scenario.get("allow_warns", [])):
+            continue
+        hit = next((line for line in log if re.search(pattern, line)), None)
+        results.append((f"no {pattern}" + (f" ({hit.strip()})" if hit is not None else ""),
+                        None if hit is not None else 0))
     # "forbid": (from, to, pattern): no line matching pattern between the first line matching from and the next matching to
     for start, end, pattern in scenario.get("forbid", []):
         first = next((i for i, line in enumerate(log) if re.search(start, line)), None)
