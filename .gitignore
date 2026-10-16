@@ -36,3 +36,6 @@ pt.log
 pt_imgui.ini
 installer/*/bin/
 installer/*/obj/
+
+# the sanitizer build tree (never commit it)
+build-asan/
