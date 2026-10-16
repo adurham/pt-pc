@@ -6885,6 +6885,12 @@ bool WouldOpenWindow(const Options& options) {
 }
 
 int main(int argc, char** argv) {
+#ifdef __APPLE__
+    // the Metal performance HUD (FPS and frame time) shows by default: the variable must be in the environment
+    // before the first Metal call, so running the binary straight from the app folder gets it too; setting it
+    // only when absent lets the environment (or the app's Info.plist) override it
+    setenv("MTL_HUD_ENABLED", "1", 0);
+#endif
 #ifdef _WIN32
     const HANDLE inherited = GetStdHandle(STD_ERROR_HANDLE);
     if ((inherited == nullptr || inherited == INVALID_HANDLE_VALUE) && AttachConsole(ATTACH_PARENT_PROCESS)) {
