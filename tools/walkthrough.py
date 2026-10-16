@@ -901,6 +901,20 @@ SCENARIOS = {
             r"input script: \d+ expectations, 0 failed",
         ],
     },
+    # the switch back to the original page replays the page's set-in (the layout records UI_sys_opt_setin);
+    # no option animation may be missing (1.0.5 asked for UI_sys_opt_setin_s, the material file's name)
+    "options_pc_back": {
+        "pad": True,
+        "start_floor": "f010",
+        "frames": 1500,
+        "route": ["start", "options_pc_back"],
+        "forbid": [("ui: option menu opened", "game: stopped", r"option animation .* missing")],
+        "expect": [
+            r"ui: option menu opened \((?:pause|first boot), PC settings\)",
+            r"ui: option menu page original",
+            r"input script: \d+ expectations, 0 failed",
+        ],
+    },
     "pc_scroll": {
         "start_floor": "f010",
         "frames": 1500,
