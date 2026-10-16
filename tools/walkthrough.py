@@ -33,6 +33,18 @@ F120_SAVE = ((0x6E69777470).to_bytes(8, "little") + (3).to_bytes(4, "little") + 
 # what the halls page counts after the retroactive unlock: the guaranteed keys' exhibits, the content that opens with the finish
 ARCHIVE_BACKFILL_COUNT = r"museum: 73 / 107 found \(68%\), bonus 0"
 
+# log lines no scenario may produce: a UI lookup by name that did not resolve is a bug in how the port asks
+# for its data (a wrong name, a missing asset) and the game always fails silently - the 1.0.5 build asked
+# for "UI_sys_opt_setin_s", a material file's name, and the option menu's set-in never replayed. A
+# scenario's "allow_warns" entry exempts patterns it provokes on purpose.
+NEVER_WARNS = [
+    r"ui: option menu model missing",
+    r"ui: option animation .* missing",
+    r"ui: font palette .* missing",
+    r"ui: .* missing, subtitle generator defaults used",
+    r"ui: texture .* missing",
+]
+
 SCENARIOS = {
     "full": {
         "start_floor": None,
@@ -2436,6 +2448,13 @@ def run(name, scenario, exe, game, demo_rate, keep, shots, pad=False, pt_args=()
         regex = re.compile(pattern)
         found = next((i for i, line in enumerate(log) if regex.search(line)), None)
         results.append((pattern, found))
+    # no lookup by name may fail silently: a "missing" line is a bug in how the port asks for its data
+    for pattern in NEVER_WARNS:
+        if any(re.search(a, pattern) for a in scenario.get("allow_warns", [])):
+            continue
+        hit = next((line for line in log if re.search(pattern, line)), None)
+        results.append((f"no {pattern}" + (f" ({hit.strip()})" if hit is not None else ""),
+                        None if hit is not None else 0))
     # "forbid": (from, to, pattern): no line matching pattern between the first line matching from and the next matching to
     for start, end, pattern in scenario.get("forbid", []):
         first = next((i for i, line in enumerate(log) if re.search(start, line)), None)
