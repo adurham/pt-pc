@@ -839,8 +839,12 @@ void InputScript::Apply(uint64_t frame, Game& game, InputState& input) {
             LogInfo("input script camera: pos ({:.4f} {:.4f} {:.4f}) fwd ({:.4f} {:.4f} {:.4f}) up ({:.4f} {:.4f} {:.4f}) vfov {:.3f}", camera.position.x,
                     camera.position.y, camera.position.z, f.x, f.y, f.z, u.x, u.y, u.z, glm::degrees(camera.fov_y));
         }
+        // decide from the finished item before consuming it: a compare after the erase below reads the
+        // erased element's bytes (a container overflow, caught by ASan)
+        const bool yields = item.op == "action" || item.op == "face" || item.op == "fent" || item.op == "fdir" ||
+                            item.op == "face_lisa" || item.op == "face_portrait";
         waypoints_.erase(waypoints_.begin());
-        if (item.op == "action" || item.op == "face" || item.op == "fent" || item.op == "fdir" || item.op == "face_lisa" || item.op == "face_portrait") {
+        if (yields) {
             break;
         }
     }
