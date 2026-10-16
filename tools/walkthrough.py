@@ -2390,14 +2390,20 @@ def run(name, scenario, exe, game, demo_rate, keep, shots, pad=False, pt_args=()
         if livesplit:
             data = data.replace(b"{livesplit_port}", str(livesplit.port).encode())
         (work / file_name).write_bytes(data)
-    cmd = [str(exe), "--game", str(game), "--headless", *save, "--frames", str(scenario["frames"]), "--demo-rate",
+    # "windowed": run with a real window instead of --headless (the daily config's window path is otherwise
+    # never exercised); "window": its size (a small one by default, since a windowed run shows on the screen)
+    window = scenario.get("window", (960, 540) if scenario.get("windowed") else (1280, 720))
+    cmd = [str(exe), "--game", str(game), *save, "--frames", str(scenario["frames"]), "--demo-rate",
            str(scenario.get("demo_rate", demo_rate)),
-           "--input-script", str(route), "--width", "1280", "--height", "720", "--seed", str(scenario.get("seed", 1))]
+           "--input-script", str(route), "--width", str(window[0]), "--height", str(window[1]), "--seed", str(scenario.get("seed", 1))]
+    if not scenario.get("windowed"):
+        cmd.insert(3, "--headless")
     if scenario.get("start_floor"):
         cmd += ["--start-floor", scenario["start_floor"]]
     if pad:
         cmd += ["--virtual-pads", "--audio-offline"] + scenario.get("extra", [])
     cmd += scenario.get("args", [])
+    cmd += ["--log", str(work / "pt.log")]
     if vr:
         cmd += ["--vr"]
     cmd += list(pt_args)
