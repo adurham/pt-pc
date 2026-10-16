@@ -1904,8 +1904,7 @@ SCENARIOS = {
     # screen is skipped) and the Game+ tier asked for together come one at a time, each for its whole 7.5 s
     "notices": {
         "start_floor": "f010",
-        # the run must outlast the wall-timed boot release and the notice queue's drain on a fast machine
-        "frames": 30000,
+        "frames": 16000,
         "args": ["--virtual-pads", "--audio-offline", "--fake-update", "99.0.0"],
         "env": {"PT_TEST_TEXTURE_SCREEN": "5000"},
         "route": ["notices"],
@@ -1918,10 +1917,6 @@ SCENARIOS = {
             r"notice: ended pc_update_available.* after 7\.[5-9] s",
             r"notice: shown pc_notice_enhanced_working",
             r"notice: ended pc_notice_enhanced_working after 7\.[5-9] s",
-        ],
-        # the made up generation reports in frames and the Game+ tier is asked for from the script: how fast
-        # the machine runs frames decides which of the two queues first, so they are checked without order
-        "expect_any": [
             r"notice: shown pc_gameplus_notice.2",
             r"notice: ended pc_gameplus_notice.2 after 7\.[5-9] s",
             r"notice: shown pc_notice_enhanced_ready",
@@ -1963,8 +1958,7 @@ SCENARIOS = {
     # door and the loops after it show none of them again
     "notifyrepeat_all": {
         "start_floor": "f010",
-        # the run must outlast the wall-timed boot release and the notice queue's drain on a fast machine
-        "frames": 32000,
+        "frames": 20000,
         "args": ["--virtual-pads", "--audio-offline", "--fake-update", "99.0.0"],
         "env": {"PT_TEST_TEXTURE_SCREEN": "5000"},
         "route": ["notifyrepeat_all", "f005", "exit"],
@@ -1973,24 +1967,21 @@ SCENARIOS = {
             r"notice: ended pc_update_available.* after 7\.[5-9] s",
             r"notice: shown pc_notice_enhanced_working",
             r"notice: ended pc_notice_enhanced_working after 7\.[5-9] s",
-            r"floor: NextFloor f010 -> f005",
-            r"floor: NextFloor f005 -> f020",
-        ],
-        # same clock-domain race as "notices": the ready line and the Game+ tier may queue either way
-        "expect_any": [
             r"notice: shown pc_gameplus_notice.2",
             r"notice: ended pc_gameplus_notice.2 after 7\.[5-9] s",
+            # the walk starts while the made up generation is still finishing: on the frame clock its ready
+            # line lands after the floors (it landed before them only while the boot ran on the wall clock)
+            r"floor: NextFloor f010 -> f005",
+            r"floor: NextFloor f005 -> f020",
             r"notice: shown pc_notice_enhanced_ready",
             r"notice: ended pc_notice_enhanced_ready after 7\.[5-9] s",
         ],
-        # nothing may queue or show again once the loops start (the queue's own drain order depends on the machine)
-        "forbid": [(r"floor: NextFloor f005 -> f020", r"zzz never", r"notice: (queued|shown|cut)")],
+        "forbid": [(r"notice: ended pc_notice_enhanced_ready", r"zzz never", r"notice: (queued|shown|cut)")],
     },
     # the start's enhanced textures screen: Return asks to skip, Esc says no, Return and Return again say yes and the start goes on
     "texture_screen": {
         "start_floor": "f010",
-        # the walk to f020 and the queue's drain need room after the boot even on a fast machine
-        "frames": 24000,
+        "frames": 12000,
         "args": ["--virtual-pads", "--audio-offline"],
         "env": {"PT_TEST_TEXTURE_SCREEN": "3000"},
         "route": ["texture_screen"],
@@ -2250,8 +2241,8 @@ SCENARIOS = {
             r"stage: _unload_ \(id 2, .*pt14_start\.fpk\) unloaded",
             r"stage: collision 9493 triangles, 370 material surfaces, 182293 line check triangles \(swap of next into current, worker",
         ],
-        # where the voice line lands among the stage lines follows the machine's timing (the simulated load
-        # stall and the swap race), so it is checked for presence without an order against them
+        # the voice line comes from the recognizer's load thread, so where it lands among the stage lines
+        # follows the machine's thread timing, not the frame clock: check it for presence, without an order
         "expect_any": [
             r"voice: whisper\.cpp CPU code ggml-cpu-",
         ],
